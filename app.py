@@ -85,33 +85,41 @@ if activity_df is not None:
     c3.metric("Total Overrun Days", f"{total_overrun} days", delta=f"{late_contracts} delayed contracts" if late_contracts > 0 else "On Time", delta_color="inverse")
     c4.metric("ECLO Nights Used", f"{eclo_count}", help="Early closure hours utilized (1.5x yield). Strictly 0 in Scenario A.")
 
-    # Section 3: Deliverables
-    st.subheader("3. Deliverables Output (Mandatory Validator CSVs)")
+        # Section 3: Deliverables Output (Mandatory Validator CSVs)
+    st.subheader(f"3. Deliverables Output — Scenario {scenario_code} Answer Key")
+    st.caption(f"Currently exporting mechanical answer key for **Scenario {scenario_code}** strictly matching §2.6 schema:")
+    
+    # Prepare distinct data strings
+    csv_access_data = access_df.to_csv(index=False)
+    csv_occupancy_data = occupancy_df.to_csv(index=False)
+    csv_results_data = results_df.to_csv(index=False)
+
     d1, d2, d3 = st.columns(3)
     with d1:
         st.download_button(
             label=f"📥 Download SCHEDULE_ACCESS.csv ({scenario_code})",
-            data=access_df.to_csv(index=False),
-            file_name="SCHEDULE_ACCESS.csv",
+            data=csv_access_data,
+            file_name=f"SCHEDULE_ACCESS_{scenario_code}.csv",
             mime="text/csv",
-            key=f"btn_acc_{scenario_code}"
+            key=f"btn_access_dl_{scenario_code}_{disruption_mode}"
         )
     with d2:
         st.download_button(
             label=f"📥 Download SCHEDULE_OCCUPANCY.csv ({scenario_code})",
-            data=occupancy_df.to_csv(index=False),
-            file_name="SCHEDULE_OCCUPANCY.csv",
+            data=csv_occupancy_data,
+            file_name=f"SCHEDULE_OCCUPANCY_{scenario_code}.csv",
             mime="text/csv",
-            key=f"btn_occ_{scenario_code}"
+            key=f"btn_occupancy_dl_{scenario_code}_{disruption_mode}"
         )
     with d3:
         st.download_button(
             label=f"📥 Download RESULTS.csv ({scenario_code})",
-            data=results_df.to_csv(index=False),
-            file_name="RESULTS.csv",
+            data=csv_results_data,
+            file_name=f"RESULTS_{scenario_code}.csv",
             mime="text/csv",
-            key=f"btn_res_{scenario_code}"
+            key=f"btn_results_dl_{scenario_code}_{disruption_mode}"
         )
+
 
             # Section 4: Workload Visualization & Timeline
     st.subheader(f"4. Weekly Workload Distribution — Scenario {scenario_code}")
