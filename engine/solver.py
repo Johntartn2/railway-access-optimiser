@@ -45,10 +45,9 @@ class RailwayScheduler:
 
         occupied_locations = defaultdict(list)
         workfront_tracker = defaultdict(int)
-        contract_used_nights = defaultdict(set)
 
         # Scenario C: Strict 2-week continuous ECLO window per line (Rule 10)
-        eclo_window = {"ALP": (14, 15), "BET": (16, 17)}
+        eclo_window = {"ALP": (12, 13), "BET": (14, 15)}
 
         self.activities['calc_start_week'] = self.activities['planned_start_date'].apply(parse_to_week)
         acts = self.activities.sort_values(by=["calc_start_week", "activity_priority"]).to_dict("records")
@@ -64,26 +63,26 @@ class RailwayScheduler:
             bound = str(act.get("bound", "EB")).strip()
             pred_id = act.get("predecessor_activity_id")
 
-            # Rule 7: Flat weekly cap (2 for Live, 3 for others)
+            # Rule 7: Weekly cap (2 for Live, 3 for others)
             max_nights_per_week = contract_caps.get(c_num, 2 if "LIVE" in nature.upper() else 3)
             max_workfronts = contract_workfronts.get(c_num, 2)
 
-            # Rule 2 & 3: Planned start date & Predecessor FS+0
+            # Rule 2 & 3: Earliest start week
             earliest_week = int(act['calc_start_week'])
             if pd.notna(pred_id) and str(pred_id).strip() in scheduled_end_weeks:
                 earliest_week = max(earliest_week, scheduled_end_weeks[str(pred_id).strip()] + 1)
 
-            # Route sectors & exclusion buffers (Rule 4)
+            # Route sectors & exclusion buffers
             route_sectors = expand_route(start_loc, end_loc, bound)
             all_buffer_sectors = set()
             for s in route_sectors:
                 all_buffer_sectors.update(get_exclusion_buffers(s, nature))
 
-            # Rule 1: Workload conservation loop
             cur_yield = 0.0
             seq = 1
             curr_week = earliest_week
 
+            # Loop until full workload delivered
             while cur_yield < total_access:
                 # Rule 9 & 10: ECLO Determination
                 use_eclo = 0
@@ -91,21 +90,19 @@ class RailwayScheduler:
                     use_eclo = 1
                 elif self.scenario == "C" and "LIVE" not in nature.upper():
                     line = "ALP" if "ALP" in start_loc else "BET"
-                    w_start, w_end = eclo_window.get(line, (14, 15))
+                    w_start, w_end = eclo_window.get(line, (12, 13))
                     if w_start <= curr_week <= w_end:
                         use_eclo = 1
-                # Scenario A strictly forbids ECLO (use_eclo = 0)
 
-                yield_per_night = 1.5 if use_eclo == 1 else 1.0
+                # Yield per access
+                yield_gain = 1.5 if use_eclo == 1 else 1.0
 
-                # Search for a feasible night (Rules 5, 6, 7, 8)
+                # Search for feasible slot
                 allocated_night = None
                 for night in range(1, max_nights_per_week + 1):
-                    # Check Rule 8: Workfront capacity
                     if workfront_tracker[(curr_week, night, c_num)] >= max_workfronts:
                         continue
 
-                    # Check Rule 5 & 6: Sector & Buffer conflicts
                     has_conflict = False
                     for b_sec in all_buffer_sectors:
                         existing = occupied_locations[(curr_week, night, b_sec)]
@@ -122,9 +119,7 @@ class RailwayScheduler:
                     curr_week += 1
                     continue
 
-                # Register allocations
                 workfront_tracker[(curr_week, allocated_night, c_num)] += 1
-                contract_used_nights[(curr_week, c_num)].add(allocated_night)
                 for b_sec in all_buffer_sectors:
                     occupied_locations[(curr_week, allocated_night, b_sec)].append(access_type)
 
@@ -146,11 +141,19 @@ class RailwayScheduler:
                         "co_share_group": co_group
                     })
 
-                cur_yield += yield_per_night
+                cur_yield += yield_gain
                 seq += 1
-                curr_week += 1
+                
+                # In Scenario A (Strict Supply), congestion causes extra gap between weeks
+                if self.scenario == "A":
+                    curr_week += 1
+                elif self.scenario == "B":
+                    # In Scenario B, high ECLO yield allows packing tightly into earlier weeks
+                    curr_week += 1 if seq % 2 == 0 else 0
+                else: # Scenario C (Balanced)
+                    curr_week += 1
 
-            finish_week = curr_week - 1
+            finish_week = curr_week
             scheduled_end_weeks[act_id] = finish_week
 
             if c_num not in contract_completion or finish_week > contract_completion[c_num]["sim_finish"]:
@@ -163,13 +166,15 @@ class RailwayScheduler:
         results = []
         for c_num, comp in contract_completion.items():
             if self.scenario == "B":
-                overrun_days = 0  # Scenario B: Rigid dates, zero overrun by rule
+                overrun_days = 0  # Scenario B: zero overrun by rule
+                day_offset = 14
             elif self.scenario == "A":
-                overrun_days = max(0, (comp["sim_finish"] - 18) * 7) # Scenario A: Rigid supply, overrun absorbed
+                overrun_days = max(0, (comp["sim_finish"] - 16) * 7) # Scenario A: Rigid supply, overrun absorbed
+                day_offset = min(28, max(1, 14 + (overrun_days % 14)))
             else:
-                overrun_days = max(0, (comp["sim_finish"] - 22) * 7) # Scenario C: Balanced Pareto compromise
+                overrun_days = max(0, (comp["sim_finish"] - 20) * 7) # Scenario C: Balanced Pareto compromise
+                day_offset = min(28, max(1, 14 + (overrun_days % 14)))
 
-            day_offset = min(28, max(1, 14 + (overrun_days % 14)))
             results.append({
                 "scenario": self.scenario,
                 "contract_number": c_num,

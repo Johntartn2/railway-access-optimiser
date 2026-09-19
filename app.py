@@ -113,11 +113,20 @@ if activity_df is not None:
             key=f"btn_res_{scenario_code}"
         )
 
-    # Section 4: Workload Visualization & Timeline
-    st.subheader("4. Weekly Workload Distribution & Timeline")
+            # Section 4: Workload Visualization & Timeline
+    st.subheader(f"4. Weekly Workload Distribution — Scenario {scenario_code}")
     st.caption("Visualizing access-night density across planning horizon weeks to detect capacity bottlenecks:")
-    weekly_counts = access_df.groupby('week')['activity_id'].count().rename("Access Nights")
-    st.bar_chart(weekly_counts)
+    
+    # Calculate access density per week
+    weekly_counts = access_df.groupby('week')['activity_id'].count()
+    
+    # Display fixed 1..28 week horizon so the shape shift is obvious
+    all_weeks = pd.DataFrame({'Access Nights': 0}, index=range(1, 29))
+    all_weeks.loc[weekly_counts.index, 'Access Nights'] = weekly_counts.values
+    
+    st.bar_chart(all_weeks)
+
+
 
     # Section 5: Innovation, Explainability & Q&A (§3.3)
     st.subheader("5. 2 AM Controller Assistant & Decision Explainability (§3.3)")
